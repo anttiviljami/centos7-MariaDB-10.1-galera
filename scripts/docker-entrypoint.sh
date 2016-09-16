@@ -8,13 +8,24 @@ preflight () {
     elif [[ -z ${SST_USER} || -z ${SST_PASS} ]]; then
         echo >&2 "########### SST_USER and SST_PASS variables must be set in order to start the cluster."
         exit 1
-   fi
+    elif [[ -z ${HOST_IP+x} ]]; then
+        echo >&2 "########### HOST_IP must be defined"
+        exit 1
+    elif [[ -z ${GALERA_PORT+x} ]]; then
+        echo >&2 "########### GALERA_PORT must be defined"
+        exit 1
+    fi
 }
 
 cluster_conf () {
     echo "########### Configuring /etc/my.cnf.d/server.cnf with cluster variables"
-    echo "wsrep_sst_auth                 = ${SST_USER}:${SST_PASS}" >> /etc/my.cnf.d/server.cnf
-    echo "wsrep_on                       = ON" >> /etc/my.cnf.d/server.cnf
+    echo "wsrep_sst_auth=${SST_USER}:${SST_PASS}" >> /etc/my.cnf.d/server.cnf
+    echo "wsrep_on=ON" >> /etc/my.cnf.d/server.cnf
+    echo "wsrep_provider_options='base_port=${GALERA_PORT};'" >> /etc/my.cnf.d/server.cnf
+
+    if [[ -n ${SST_PORT} ]]; then
+      echo "wsrep_sst_receive_address=${HOST_IP}:${SST_PORT}" >> /etc/my.cnf.d/server.cnf
+    fi
 }
 
 
@@ -160,17 +171,17 @@ elif [ ${CLUSTER} = "BOOTSTRAP" ]; then
     echo "########### Starting MariaDB cluster..."
     # Workaround odd bug(?) causing corrupted binlog index after initialization
     mv /var/lib/mysql/mysql-bin.index /tmp
-    exec $@ --wsrep_node_address="${HOSTNAME}" \
+    exec $@ --wsrep_node_address="${HOST_IP}:${GALERA_PORT}" \
     --wsrep_cluster_name="${CLUSTER_NAME}" \
     --wsrep_new_cluster --wsrep_cluster_address="gcomm://" \
-    --wsrep_node_name="${HOSTNAME}" 
+    --wsrep_node_name="${HOSTNAME}"
 else
     echo "########### Joining MariaDB cluster ${CLUSTER_NAME} on nodes ${CLUSTER}..."
     preflight
     initialize_db $@
     cluster_conf
-    exec $@ --wsrep_node_address="${HOSTNAME}" \
+    exec $@ --wsrep_node_address="${HOST_IP}:${GALERA_PORT}" \
     --wsrep_cluster_name="${CLUSTER_NAME}" \
     --wsrep_cluster_address="gcomm://${CLUSTER}"
-    --wsrep_node_name="${HOSTNAME}" 
+    --wsrep_node_name="${HOSTNAME}"
 fi
